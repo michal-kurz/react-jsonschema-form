@@ -195,9 +195,11 @@ export default function Playground({ themes, validators }: PlaygroundProps) {
             >
               <FormComponent
                 {...liveSettings}
+                enableLogging
                 templates={templates}
                 extraErrors={extraErrors}
                 schema={schema}
+                liveValidate={{ debounceThreshold: 1000 }}
                 uiSchema={uiSchema}
                 formData={formData}
                 fields={{ geo: GeoPosition }}

@@ -12,10 +12,11 @@
     "cs-format": "prettier \"src/**/*.ts?(x)\" --write",
     "build": "rimraf build && cross-env NODE_ENV=production vite build",
     "lint": "eslint src",
-    "precommit": "lint-staged",
+
     "publish-to-gh-pages": "npm run build && gh-pages --dist build/",
     "publish-to-npm": "npm run build && npm publish",
     "start": "vite --force",
+    "restart": "cd ../.. && npm run build && cd packages/playground && npm run start",
     "preview": "vite preview",
     "bump-packages": "npm update --save --lockfile-version 2"
   },
