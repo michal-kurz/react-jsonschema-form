@@ -38,11 +38,14 @@ import _get from 'lodash/get';
 import _isEmpty from 'lodash/isEmpty';
 import _pick from 'lodash/pick';
 import _toPath from 'lodash/toPath';
+import _debounce from 'lodash/debounce';
+import _memoize from 'lodash/memoize';
 
 import getDefaultRegistry from '../getDefaultRegistry';
 
 /** The properties that are passed to the `Form` */
 export interface FormProps<T = any, S extends StrictRJSFSchema = RJSFSchema, F extends FormContextType = any> {
+  enableLogging?: boolean;
   /** The JSON schema object for the form */
   schema: S;
   /** An implementation of the `ValidatorType` interface that is needed for form validation to work */
@@ -156,7 +159,7 @@ export interface FormProps<T = any, S extends StrictRJSFSchema = RJSFSchema, F e
   /** If set to true, the form will perform validation and show any validation errors whenever the form data is changed,
    * rather than just on submit
    */
-  liveValidate?: boolean;
+  liveValidate?: boolean | { debounceThreshold: number };
   /** If `omitExtraData` and `liveOmit` are both set to true, then extra form data values that are not in any form field
    * will be removed whenever `onChange` is called. Set to `false` by default
    */
@@ -274,8 +277,16 @@ export default class Form<
     if (this.props.onChange && !deepEquals(this.state.formData, this.props.formData)) {
       this.props.onChange(this.state);
     }
+
+    this.validateAndUpdateState(this.state.formData);
     this.formElement = createRef();
   }
+
+  log = (...params: any[]) => {
+    if (this.props.enableLogging) {
+      console.log(...params);
+    }
+  };
 
   /** React lifecycle method that gets called before new props are provided, updates the state based on new props. It
    * will also call the`onChange` handler if the `formData` is modified to add missing default values as part of the
@@ -285,14 +296,30 @@ export default class Form<
    */
   UNSAFE_componentWillReceiveProps(nextProps: FormProps<T, S, F>) {
     const nextState = this.getStateFromProps(nextProps, nextProps.formData);
-    if (
+    const mustValidate = !nextProps.noValidate && nextProps.liveValidate;
+    const shouldCallOnChange =
       !deepEquals(nextState.formData, nextProps.formData) &&
       !deepEquals(nextState.formData, this.state.formData) &&
-      nextProps.onChange
-    ) {
-      nextProps.onChange(nextState);
+      nextProps.onChange;
+
+    if (shouldCallOnChange) {
+      nextProps.onChange!(nextState);
     }
+
     this.setState(nextState);
+
+    if (mustValidate) {
+      // @ts-ignore
+      const debounceThreshold = nextProps.liveValidate?.debounceThreshold;
+
+      const callbackAfterValidation = () => {
+        if (shouldCallOnChange) {
+          nextProps.onChange!(this.state);
+        }
+      };
+
+      this.validateAndUpdateStateDebounced(debounceThreshold)(nextState.formData, callbackAfterValidation);
+    }
   }
 
   /** Extracts the updated state from the given `props` and `inputFormData`. As part of this process, the
@@ -308,8 +335,6 @@ export default class Form<
     const schema = 'schema' in props ? props.schema : this.props.schema;
     const uiSchema: UiSchema<T, S, F> = ('uiSchema' in props ? props.uiSchema! : this.props.uiSchema!) || {};
     const edit = typeof inputFormData !== 'undefined';
-    const liveValidate = 'liveValidate' in props ? props.liveValidate : this.props.liveValidate;
-    const mustValidate = edit && !props.noValidate && liveValidate;
     const rootSchema = schema;
     const experimental_defaultFormStateBehavior =
       'experimental_defaultFormStateBehavior' in props
@@ -328,38 +353,25 @@ export default class Form<
     const getCurrentErrors = (): ValidationData<T> => {
       if (props.noValidate) {
         return { errors: [], errorSchema: {} };
-      } else if (!props.liveValidate) {
-        return {
-          errors: state.schemaValidationErrors || [],
-          errorSchema: state.schemaValidationErrorSchema || {},
-        };
       }
+
+      // return {
+      //   errors: state.schemaValidationErrors || [],
+      //   errorSchema: state.schemaValidationErrorSchema || {},
+      // };
+
       return {
         errors: state.errors || [],
         errorSchema: state.errorSchema || {},
       };
     };
 
-    let errors: RJSFValidationError[];
-    let errorSchema: ErrorSchema<T> | undefined;
-    let schemaValidationErrors: RJSFValidationError[] = state.schemaValidationErrors;
-    let schemaValidationErrorSchema: ErrorSchema<T> = state.schemaValidationErrorSchema;
-    if (mustValidate) {
-      const schemaValidation = this.validate(formData, schema, schemaUtils);
-      errors = schemaValidation.errors;
-      errorSchema = schemaValidation.errorSchema;
-      schemaValidationErrors = errors;
-      schemaValidationErrorSchema = errorSchema;
-    } else {
-      const currentErrors = getCurrentErrors();
-      errors = currentErrors.errors;
-      errorSchema = currentErrors.errorSchema;
-    }
-    if (props.extraErrors) {
-      const merged = validationDataMerge({ errorSchema, errors }, props.extraErrors);
-      errorSchema = merged.errorSchema;
-      errors = merged.errors;
-    }
+    const currentErrors = getCurrentErrors();
+    const errors: RJSFValidationError[] = currentErrors.errors;
+    const errorSchema: ErrorSchema<T> | undefined = currentErrors.errorSchema;
+    const schemaValidationErrors: RJSFValidationError[] = state.schemaValidationErrors;
+    const schemaValidationErrorSchema: ErrorSchema<T> = state.schemaValidationErrorSchema;
+
     const idSchema = schemaUtils.toIdSchema(
       retrievedSchema,
       uiSchema['ui:rootFieldId'],
@@ -508,7 +520,6 @@ export default class Form<
 
     const mustValidate = !noValidate && liveValidate;
     let state: Partial<FormState<T, S, F>> = { formData, schema };
-    let newFormData = formData;
 
     if (omitExtraData === true && liveOmit === true) {
       const retrievedSchema = schemaUtils.retrieveSchema(schema, formData);
@@ -516,41 +527,63 @@ export default class Form<
 
       const fieldNames = this.getFieldNames(pathSchema, formData);
 
-      newFormData = this.getUsedFormData(formData, fieldNames);
       state = {
-        formData: newFormData,
+        formData: this.getUsedFormData(formData, fieldNames),
       };
     }
 
-    if (mustValidate) {
-      const schemaValidation = this.validate(newFormData);
-      let errors = schemaValidation.errors;
-      let errorSchema = schemaValidation.errorSchema;
-      const schemaValidationErrors = errors;
-      const schemaValidationErrorSchema = errorSchema;
-      if (extraErrors) {
-        const merged = validationDataMerge(schemaValidation, extraErrors);
-        errorSchema = merged.errorSchema;
-        errors = merged.errors;
-      }
-      state = {
-        formData: newFormData,
-        errors,
-        errorSchema,
-        schemaValidationErrors,
-        schemaValidationErrorSchema,
-      };
-    } else if (!noValidate && newErrorSchema) {
+    if (!noValidate && newErrorSchema) {
       const errorSchema = extraErrors
         ? (mergeObjects(newErrorSchema, extraErrors, 'preventDuplicates') as ErrorSchema<T>)
         : newErrorSchema;
+
       state = {
-        formData: newFormData,
+        formData,
         errorSchema: errorSchema,
         errors: toErrorList(errorSchema),
       };
     }
-    this.setState(state as FormState<T, S, F>, () => onChange && onChange({ ...this.state, ...state }, id));
+
+    this.setState(state as FormState<T, S, F>, () => {
+      onChange && onChange({ ...this.state, ...state }, id);
+
+      if (mustValidate) {
+        // @ts-ignore
+        const debounceThreshold = liveValidate?.debounceThreshold;
+        const callbackAfterValidation = () => this.props.onChange?.(this.state, id);
+        this.validateAndUpdateStateDebounced(debounceThreshold)(state.formData, callbackAfterValidation);
+      }
+    });
+  };
+
+  validateAndUpdateStateDebounced = _memoize((debounceThreshold: number | null | undefined) => {
+    return typeof debounceThreshold === 'number'
+      ? (_debounce(this.validateAndUpdateState, debounceThreshold) as any)
+      : this.validateAndUpdateState;
+  });
+
+  validateAndUpdateState = (formData: T | undefined, callback?: () => void) => {
+    this.log('RUNNING VALIDATE!!', this.props.liveValidate);
+    const schemaValidation = this.validate(formData);
+    let errors = schemaValidation.errors;
+    let errorSchema = schemaValidation.errorSchema;
+    const schemaValidationErrors = errors;
+    const schemaValidationErrorSchema = errorSchema;
+
+    if (this.props.extraErrors) {
+      const merged = validationDataMerge(schemaValidation, this.props.extraErrors);
+      errorSchema = merged.errorSchema;
+      errors = merged.errors;
+    }
+
+    const state = {
+      errors,
+      errorSchema,
+      schemaValidationErrors,
+      schemaValidationErrorSchema,
+    };
+
+    this.setState(state as FormState<T, S, F>, callback);
   };
 
   /**

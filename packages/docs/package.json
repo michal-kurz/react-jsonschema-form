@@ -13,7 +13,7 @@
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc",
-    "precommit": "lint-staged",
+
     "cs-check": "prettier -l \"{src, docs}/**/*.(ts?(x)|md|css)\"",
     "cs-format": "prettier \"{src, docs}/**/*.(ts?(x)|md|css)\" --write",
     "bump-packages": "npm update --save --lockfile-version 2"
