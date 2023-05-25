@@ -3,6 +3,7 @@ import has from 'lodash/has';
 
 import { PROPERTIES_KEY } from '../constants';
 import { FormContextType, RJSFSchema, StrictRJSFSchema, ValidatorType } from '../types';
+import { getOptionMatchingManualDiscriminator } from 'schema/getOptionMatchingManualDiscriminator';
 
 /** Given the `formData` and list of `options`, attempts to find the index of the option that best matches the data.
  * Deprecated, use `getFirstMatchingOption()` instead.
@@ -32,6 +33,12 @@ export default function getMatchingOption<
   if (formData === undefined) {
     return 0;
   }
+
+  const manualDiscriminatorMatch = getOptionMatchingManualDiscriminator(discriminatorField, formData, options);
+  if (manualDiscriminatorMatch) {
+    return manualDiscriminatorMatch;
+  }
+
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
 
