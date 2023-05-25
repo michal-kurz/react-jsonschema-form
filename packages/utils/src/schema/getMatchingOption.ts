@@ -35,7 +35,7 @@ export default function getMatchingOption<
   }
 
   const manualDiscriminatorMatch = getOptionMatchingManualDiscriminator(discriminatorField, formData, options);
-  if (manualDiscriminatorMatch) {
+  if (manualDiscriminatorMatch !== undefined) {
     return manualDiscriminatorMatch;
   }
 

@@ -133,7 +133,7 @@ export default function getClosestMatchingOption<
   discriminatorField?: string
 ): number {
   const manualDiscriminatorMatch = getOptionMatchingManualDiscriminator(discriminatorField, formData, options);
-  if (manualDiscriminatorMatch) {
+  if (manualDiscriminatorMatch !== undefined) {
     return manualDiscriminatorMatch;
   }
 
