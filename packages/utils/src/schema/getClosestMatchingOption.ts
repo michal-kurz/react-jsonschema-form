@@ -10,6 +10,7 @@ import retrieveSchema from './retrieveSchema';
 import { ONE_OF_KEY, REF_KEY } from '../constants';
 import guessType from '../guessType';
 import { FormContextType, RJSFSchema, StrictRJSFSchema, ValidatorType } from '../types';
+import { getOptionMatchingManualDiscriminator } from 'schema/getOptionMatchingManualDiscriminator';
 
 /** A junk option used to determine when the getFirstMatchingOption call really matches an option rather than returning
  * the first item
@@ -131,6 +132,11 @@ export default function getClosestMatchingOption<
   selectedOption = -1,
   discriminatorField?: string
 ): number {
+  const manualDiscriminatorMatch = getOptionMatchingManualDiscriminator(discriminatorField, formData, options);
+  if (manualDiscriminatorMatch !== undefined) {
+    return manualDiscriminatorMatch;
+  }
+
   // Reduce the array of options down to a list of the indexes that are considered matching options
   const allValidIndexes = options.reduce((validList: number[], option, index: number) => {
     const testOptions: S[] = [JUNK_OPTION as S, option];
