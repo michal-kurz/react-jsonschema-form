@@ -43,14 +43,21 @@ export default function getMatchingOption<
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
 
-    // If we have a discriminator field, then we will use this to make the determination
-    if (discriminatorField && has(option, [PROPERTIES_KEY, discriminatorField])) {
-      const value = get(formData, discriminatorField);
-      const discriminator = get(option, [PROPERTIES_KEY, discriminatorField], {});
-      if (validator.isValid(discriminator, value, rootSchema)) {
-        return i;
+    if (discriminatorField) {
+      if (has(option, [PROPERTIES_KEY, discriminatorField])) {
+        const value = get(formData, discriminatorField);
+        const discriminator = get(option, [PROPERTIES_KEY, discriminatorField], {});
+
+        if (discriminator?.enum?.includes(value)) {
+          return i;
+        }
       }
-    } else if (option[PROPERTIES_KEY]) {
+
+      continue;
+    }
+
+    // If we have a discriminator field, then we will use this to make the determination
+    if (option[PROPERTIES_KEY]) {
       // If the schema describes an object then we need to add slightly more
       // strict matching to the schema, because unless the schema uses the
       // "requires" keyword, an object will match the schema as long as it
